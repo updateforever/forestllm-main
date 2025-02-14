@@ -1,0 +1,8 @@
+{
+    "grade_response": {
+        "prompt": {
+            "prompt_en": "You are a forestry evaluation expert. Review and grade the following content for its suitability in a forestry instruction-tuning dataset. Evaluate the original question, expert refinements, conversational format, and student's answer. Provide a score (1-10) and concise feedback on the overall quality and alignment with the reference answer.\n\nBackground: '{text}'\nOriginal Response: '{original_response}'\nRefined Response: '{refined_response}'\nConversational Form: '{conversational_form}'\nStudent's Answer: '{student_answer}'\n\nOutput format:\n{\"score\": \"<score>\", \"feedback\": \"<feedback>\"}",
+            "prompt_cn": "你是一位经验丰富的评估专家，专注于分析学生的作答情况以判断当前试题的重要性。请基于以下提供的原始试题、参考答案以及学生作答进行全面分析，着重关注以下方面：\n1.理解程度：学生对问题的理解是否到位？回答是否偏离问题本身？\n2.准确性： 回答是否与标准答案保持一致？\n 重要性评估标准：\n1.如果学生的回答存在明显的理解偏差、逻辑错误或较大的知识空白，请将该条数据标记为高重要性。\n 2.如果学生的回答基本正确，但在细节上有所欠缺，请标记为中等重要性。\n3.如果学生的回答完全正确，且逻辑清晰，请标记为低重要性。输出格式：'Score': '<1-10的分数，1为非常差，10为非常好>','importance_level': '<高/中/低>'\n原始试题和参考答案：'{response}'\n学生作答：'{student_answer}'"
+        }
+    }
+}

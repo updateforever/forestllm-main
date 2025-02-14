@@ -1,0 +1,50 @@
+# 忽略所有 .log 文件
+*.log
+
+# 忽略 build 目录及其内容
+build/
+
+# 忽略根目录的 .env 文件
+.env
+
+# 忽略所有备份文件（以 ~ 结尾）
+*~
+
+# 忽略 logs 目录下的 .log 文件
+logs/*.log
+
+# 递归忽略 node_modules 目录
+node_modules/
+
+# 忽略 Python 依赖目录
+venv/
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# 忽略 Mac 和 Windows 系统文件
+.DS_Store
+Thumbs.db
+
+# 忽略临时文件
+*.tmp
+!important.tmp
+
+# 忽略特定的 outputs 目录
+outputs/0113/
+outputs/0116/
+outputs/article/
+outputs/logs/
+outputs/old/
+data_sft/
+data/
+
+qwen_article_output.json
+qwen_article_output.json
+qwen_book_output.json
+qwen_web_output.json
+run.sh
+
+data/mateinfo/web_deduped-1114.jsonl
+data/orgs/linyezixun_31342_final.jsonl
