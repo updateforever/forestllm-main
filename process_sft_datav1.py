@@ -1,15 +1,13 @@
 import json
-import csv
+import pandas as pd
 import argparse
 import re
-import ast
-from collections import defaultdict
-from agents import VirtualTeacherAgent  # 这里替换为你的模块路径
-
+from agents import VirtualTeacherAgent
 
 # 初始化 VirtualTeacherAgent
 virtual_teacher_r1 = VirtualTeacherAgent(model="deepseek-r1")
 virtual_teacher = VirtualTeacherAgent(model="qwen")
+
 
 def extract_conversational_form(item, log_file="conversation_errors.log"):
     """
@@ -255,7 +253,8 @@ def extract_multiple_choice_details(response):
 
 def process_data(input_file, train_output_files, eval_output_files):
     """
-    读取数据，并分类转换为 JSONL & CSV 格式
+    读取数据，并分类转换为 JSONL & CSV 格式，同时保留 `id`，确保后续能基于 `id` 进行数据划分。
+    现在 `eval_multiple_choice.csv` 由 `pandas` 处理，自动处理逗号问题。
     """
     with open(input_file, "r", encoding="utf-8") as f:
         data_samples = json.load(f)
@@ -267,14 +266,13 @@ def process_data(input_file, train_output_files, eval_output_files):
     eval_csv_data = []
 
     for item in data_samples:
+        item_id = item.get("id", "unknown_id")
         mastery_level = item.get("grading_teacher", {}).get("evaluation", {}).get("mastery_level", "unknown")
         question_type = item.get("question_setter", {}).get("question_type", "unknown")
         knowledge_point = item.get("question_setter", {}).get("knowledge", "")
         response_text = item.get("question_setter", {}).get("response", "")
-        # question, answer = extract_question_and_answer(response_text)
 
         if question_type == "multiple_choice":
-            # JSONL（多选题 → 存储口语化对话）
             user_input, assistant_output = extract_conversational_form(item)
             messages = [
                 {"role": "system", "content": "你是一个专业的林业智能问答助手"},
@@ -283,30 +281,27 @@ def process_data(input_file, train_output_files, eval_output_files):
             ]
             json.dump(
                 {
+                    "id": item_id,
                     "messages": messages,
                     "mastery_level": mastery_level,
                     "question_type": question_type,
                     "knowledge": knowledge_point,
                 },
                 train_streams["multiple_choice"],
-                ensure_ascii=False  # ✅ 确保中文正确存储
+                ensure_ascii=False
             )
             train_streams["multiple_choice"].write('\n')
 
             # 评测 CSV（存储原始试题）
             question, choices, answer, explanation = extract_multiple_choice_details(response_text)
-            # 跳过 question、choices 或 answer 为空的情况
             if not question or not any(choices) or not answer:
-                print("⚠️ 跳过无效题目（question、choices 或 answer 为空）")
+                print(f"⚠️ 跳过无效题目（id: {item_id}，question、choices 或 answer 为空）")
                 continue
-            eval_csv_data.append([multiple_choice_id, question] + choices + [answer, explanation])
+            eval_csv_data.append([multiple_choice_id, question] + choices + [answer, explanation, item_id, knowledge_point])
             multiple_choice_id += 1
 
         elif question_type in ["short_answer", "open_discussion"]:
-            # 简答题 & 开放讨论题
             question, answer = extract_cot_answer(item, mastery_level)
-
-            # 训练 JSONL（存储 CoT 处理逻辑）
             messages = [
                 {"role": "system", "content": "你是一个专业的林业智能问答助手"},
                 {"role": "user", "content": question},
@@ -315,19 +310,19 @@ def process_data(input_file, train_output_files, eval_output_files):
 
             json.dump(
                 {
+                    "id": item_id,
                     "messages": messages,
                     "mastery_level": mastery_level,
                     "question_type": question_type,
                     "knowledge": knowledge_point,
                 },
                 train_streams["general_qa"],
-                ensure_ascii=False  # ✅ 确保中文正确存储
+                ensure_ascii=False
             )
             train_streams["general_qa"].write('\n')
 
-            # 评测 JSONL（存储原始问答）
             question, answer = extract_question_and_answer(response_text)
-            eval_qa_entry = {"history": [], "query": question, "response": answer}
+            eval_qa_entry = {"id": item_id, "history": [], "query": question, "response": answer}
             json.dump(eval_qa_entry, eval_streams["general_qa"], ensure_ascii=False)
             eval_streams["general_qa"].write('\n')
 
@@ -335,33 +330,23 @@ def process_data(input_file, train_output_files, eval_output_files):
         f.close()
     for f in eval_streams.values():
         f.close()
-     
-    # 存储评测 CSV
-    with open(eval_output_files["multiple_choice"], "w", encoding="utf-8", newline="") as csv_f:
-        writer = csv.writer(csv_f)
-        writer.writerow(["id", "question", "A", "B", "C", "D", "answer", "explanation"])
-        writer.writerows(eval_csv_data)
 
-    print(f"数据已成功分类并保存")
+    # ✅ **使用 pandas 存储 CSV（自动处理逗号和格式问题）**
+    eval_df = pd.DataFrame(eval_csv_data, columns=["eval_id", "question", "A", "B", "C", "D", "answer", "explanation", "id", "knowledge_point"])
+    eval_df.to_csv(eval_output_files["multiple_choice"], encoding="utf-8", index=False)
 
+    print(f"数据已成功分类并保存（所有数据均保留 `id`）")
 
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Process data for training and evaluation.")
-    parser.add_argument("--input", type=str, default="qwen_article_output.json", help="Path to the input JSON file")
-    parser.add_argument("--train_mc", type=str, default="outputs/sft_data/article/train_multiple_choice.jsonl")
-    parser.add_argument("--train_qa", type=str, default="outputs/sft_data/article/train_general_qa.jsonl")
-    parser.add_argument("--eval_mc", type=str, default="outputs/sft_data/article/eval_multiple_choice.csv")
-    parser.add_argument("--eval_qa", type=str, default="outputs/sft_data/article/eval_general_qa.jsonl")
+    parser.add_argument("--input", type=str, default="qwen_web_output.json", help="Path to the input JSON file")
+    parser.add_argument("--train_mc", type=str, default="outputs/sft_data/web/train_multiple_choice.jsonl")
+    parser.add_argument("--train_qa", type=str, default="outputs/sft_data/web/train_general_qa.jsonl")
+    parser.add_argument("--eval_mc", type=str, default="outputs/sft_data/web/eval_multiple_choice.csv")
+    parser.add_argument("--eval_qa", type=str, default="outputs/sft_data/web/eval_general_qa.jsonl")
 
     args = parser.parse_args()
 
     process_data(args.input, {"multiple_choice": args.train_mc, "general_qa": args.train_qa},
                     {"multiple_choice": args.eval_mc, "general_qa": args.eval_qa})
-
-
-# /home/wyp/project/ForestLLM/qwen_web_output_step5done_05 copy.json
-# python process_sft_data.py --input input.json --output output.jsonl
-
-# {"messages": [{"role": "system", "content": "你是个有用无害的助手"}, {"role": "user", "content": "告诉我明天的天气"}, {"role": "assistant", "content": "明天天气晴朗"}], "rejected_response": "我不知道"}
-# {"messages": [{"role": "system", "content": "你是个有用无害的数学计算器"}, {"role": "user", "content": "1+1等于几"}, {"role": "assistant", "content": "等于2"}, {"role": "user", "content": "再加1呢"}, {"role": "assistant", "content": "等于3"}], "rejected_response": "我不知道"}

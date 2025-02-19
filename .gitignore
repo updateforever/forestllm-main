@@ -48,3 +48,13 @@ run.sh
 
 data/mateinfo/web_deduped-1114.jsonl
 data/orgs/linyezixun_31342_final.jsonl
+outputs/sft_data/article/eval_general_qa.jsonl
+outputs/sft_data/article/eval_multiple_choice.csv
+outputs/sft_data/article/train_general_qa.jsonl
+outputs/sft_data/article/train_multiple_choice.jsonl
+outputs/sft_data/book/eval_general_qa.jsonl
+outputs/sft_data/book/eval_multiple_choice.csv
+outputs/sft_data/book/train_general_qa.jsonl
+outputs/sft_data/book/train_multiple_choice.jsonl
+models/bert-base-chinese
+outputs/sft_data/

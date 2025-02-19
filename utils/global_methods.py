@@ -281,12 +281,13 @@ def run_ds(query, model="deepseek-r1", temperature=0.7, num_gen=1):
     """
 
     client = OpenAI(
-        api_key=os.getenv("sk-9fca3e0e00994b96835cf550bb254ba0"),  # API Key 读取方式
+        api_key="sk-9fca3e0e00994b96835cf550bb254ba0", 
+        # api_key=os.getenv("sk-9fca3e0e00994b96835cf550bb254ba0"),  # API Key 读取方式
         base_url="https://dashscope.aliyuncs.com/compatible-mode/v1",
     )
 
     completion = client.chat.completions.create(
-        model=model,
+        model="deepseek-r1",
         temperature=temperature,
         n=num_gen,
         messages=[{"role": "user", "content": query}],
