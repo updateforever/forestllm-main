@@ -30,6 +30,21 @@
             "request": "launch",
             "program": "${file}",
             "console": "integratedTerminal",
+        },
+        {
+            "name": "LLaMA Embeddings",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": true,
+            "args": [
+                "--model_path", "/home/wyp/project/forest/forestllm-main/models/bert-base-chinese/",  // "/home/wyp/project/swift/models/llama_3_1_8b_ins/",
+                "--output_dir", "outputs/emb_data/",
+                "--original_file", "mateinfo/merged_org_data.jsonl",
+                "--generated_file", "sft_output_all_250220.json",
+                "--mode", "both"
+            ]
         }
     ]
 }

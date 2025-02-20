@@ -58,3 +58,5 @@ outputs/sft_data/book/train_general_qa.jsonl
 outputs/sft_data/book/train_multiple_choice.jsonl
 models/bert-base-chinese
 outputs/sft_data/
+mateinfo/
+outputs/emb_data/
