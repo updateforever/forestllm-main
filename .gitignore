@@ -38,7 +38,6 @@ outputs/article/
 outputs/logs/
 outputs/old/
 data_sft/
-data/
 
 qwen_article_output.json
 qwen_article_output.json
@@ -60,3 +59,5 @@ models/bert-base-chinese
 outputs/sft_data/
 mateinfo/
 outputs/emb_data/
+outputs/
+benchmark/

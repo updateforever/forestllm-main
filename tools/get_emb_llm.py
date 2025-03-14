@@ -193,12 +193,12 @@ python get_emb_llm.py \
     --generated_file "sft_output_all_250220.json" \
     --mode both
 
-python get_emb_llm.py \
+python tools/get_emb_llm.py \
     --model_path "/home/wyp/project/forest/forestllm-main/models/bert-base-chinese/" \
-    --output_dir "outputs/emb_data/" \
+    --output_dir "outputs/emb_data/bert/" \
     --original_file "mateinfo/merged_org_data.jsonl" \
-    --generated_file "sft_output_all_250220.json" \
-    --batch_size 16
+    --generated_file "outputs/emb_data/sft_output_all_250220.json" \
+    --batch_size 32 \
     --mode both    
 '''
 

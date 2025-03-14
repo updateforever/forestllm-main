@@ -45,6 +45,27 @@
                 "--generated_file", "sft_output_all_250220.json",
                 "--mode", "both"
             ]
+        },
+        {
+            "name": "Debug Evaluate Pipeline",
+            "type": "debugpy",
+            "request": "launch",
+            "program": "${file}",
+            "console": "integratedTerminal",
+            "justMyCode": false,
+            "args": [
+                // "--model_path", "default_model_path",
+                // "--input_file", "data.json",
+                // "--task_type", "mcq",
+                // "--evaluation_method", "metrics",
+                "--batch_size", "2",
+                "--max_new_tokens", "512",
+                "--temperature", "0.3"
+            ],
+            "env": {
+                // "PYTHONUNBUFFERED": "1",
+                // "PYTHONPATH": "${workspaceFolder}/tools/eval",
+            }
         }
     ]
 }
