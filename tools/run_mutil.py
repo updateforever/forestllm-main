@@ -1,4 +1,9 @@
 import os
+import sys
+prj_path = os.path.join(os.path.dirname(__file__), '..')
+if prj_path not in sys.path:
+    sys.path.append(prj_path)
+
 import json
 import hashlib
 import logging
@@ -25,7 +30,7 @@ logging.basicConfig(
     format="%(asctime)s - %(levelname)s - %(message)s",
     handlers=[
         logging.FileHandler(
-            f"/home/wyp/project/ForestLLM/outputs/logs/process_{timestamp}.log",
+            f"/home/wyp/project/forest/forestllm-main/outputs/logs/process_{timestamp}.log",
             mode="w",
             encoding="utf-8",
         ),
@@ -597,46 +602,13 @@ def process_entry(
 # 🔧 **参数解析**
 def parse_args():
     parser = argparse.ArgumentParser()
-    parser.add_argument(
-        "--prompt-path",
-        help="Prompt文件路径，用于加载出题人、专家、培训机构专家、模拟考生和评卷老师的Prompt",
-        default="/home/wyp/project/ForestLLM/prompts",
-    )
-    parser.add_argument(
-        "--data-file",
-        help="JSONL文件路径，用于加载原始数据",
-    )
-    parser.add_argument(
-        "--out-dir",
-        help="输出文件夹路径，用于保存生成的指令数据集",
-    )
-    parser.add_argument(
-        "--data_class",
-        default="web",
-        help="数据类别（如 web, article, book）",
-    )
-    parser.add_argument(
-        "--model",
-        default="qwen",
-        choices=[
-            "chatgpt_o1-preview",
-            "gpt-4",
-            "chatgpt",
-            "claude",
-            "gemini",
-            "qwen",
-            "gpt-3.5-turbo",
-        ],
-        type=str,
-    )
+    parser.add_argument("--prompt-path", default="/home/wyp/project/ForestLLM/prompts", help="Prompt文件路径")
+    parser.add_argument("--data-file",help="JSONL文件路径，用于加载原始数据")
+    parser.add_argument("--out-dir", help="输出文件夹路径，用于保存生成的指令数据集",)
+    parser.add_argument("--data_class", default="book", help="数据类别（如 web, article, book）")
+    parser.add_argument("--model", default="qwen", choices=["chatgpt_o1-preview", "gpt-4", "chatgpt", "qwen"], type=str)
     parser.add_argument("--num_works", default=1, type=int)
-    parser.add_argument(
-        "--step",
-        type=int,
-        choices=[1, 2, 3, 4, 5],
-        required=True,
-        help="选择要执行的阶段: 1=QuestionSetter, 2=ExpertAgent, 3=VirtualTeacher, 4=SimulatedLearner, 5=GradingTeacher",
-    )
+    parser.add_argument("--step", type=int, choices=[1, 2, 3, 4, 5], required=True, help="执行阶段",)
     return parser.parse_args()
 
 
@@ -646,27 +618,20 @@ def main():
     data_file = args.data_file
     out_folder = args.out_dir
 
-    # 动态生成输出文件路径
-    # if out_folder.endswith('.json'):
-    #     print('直接给出完整路径')
-    #     out_file = out_folder
-    # else:
-    #     out_file = os.path.join(out_folder, f"{args.data_class}_output.json")
-
     logging.info(f"使用模型: {args.model}")
     logging.info(f"数据文件: {data_file}")
     # logging.info(f"输出路径: {out_file}")
     logging.info(f"当前执行阶段: {args.step}")
 
     # 自动推断 data_class
-    data_class = infer_data_class(data_file)
-    if data_class == "unknown":
-        logging.error("无法推断 data_class，请检查数据文件。")
-        return
+    # data_class = infer_data_class(data_file)
+    # if data_class == "unknown":
+    #     logging.error("无法推断 data_class，请检查数据文件。")
+        # data_class = args.data_class
 
     # 加载已存在的数据
     out_file, existing_ids, existing_data = load_existing_data(
-        out_folder, args.model, data_class
+        out_folder, args.model, args.data_class
     )
 
     # 加载数据和初始化
@@ -699,33 +664,15 @@ def main():
     saver_thread.start()
 
     # 多线程处理数据
-    with ThreadPoolExecutor(
-        max_workers=args.num_works
-    ) as executor:  # 根据硬件调整线程数
-        futures = {
-            executor.submit(
-                process_entry_with_logging,
-                entry,
-                data_queue,
-                out_file,
-                question_setter,
-                expert_agent,
-                virtual_teacher,
-                learner,
-                grader,
-                args.step,
-                data_class,
-            ): entry
-            for entry in data
-        }
+    with ThreadPoolExecutor(max_workers=args.num_works) as executor:  # 根据硬件调整线程数
+        futures = {executor.submit(process_entry_with_logging, entry, data_queue, out_file,
+                                   question_setter, expert_agent, virtual_teacher,
+                                   learner, grader, args.step, args.data_class, ): entry 
+                    for entry in data
+                    }
 
         # 使用 tqdm 监控进度
-        for future in tqdm(
-            as_completed(futures),
-            total=len(futures),
-            desc="Processing Entries",
-            unit="entry",
-        ):
+        for future in tqdm(as_completed(futures), total=len(futures), desc="Processing Entries", unit="entry"):
             try:
                 future.result()
             except Exception as e:

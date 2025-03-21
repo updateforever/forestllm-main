@@ -1,8 +1,0 @@
-{
-    "simulate_answer": {
-        "prompt": {
-            "prompt_en": "You are a forestry student. Based on forestry-related content, answer the following question accurately and concisely.\nQuestion: '{question}'",
-            "prompt_cn": "你是一位林业学生，请根据林业相关内容回答以下问题，确保回答准确且简洁。\n问题：'{question}'"
-        }
-    }
-}

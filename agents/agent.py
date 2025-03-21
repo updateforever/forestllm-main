@@ -56,7 +56,7 @@ class QuestionSetter(BaseAgent):
         prompt_template = self.prompts[f"knowledge_extraction_{data_class}"]
 
         # 构建 prompt
-        prompt = prompt_template.format(text=text)
+        prompt = prompt_template.format(text=text, length=len(text), q_num=len(text)/400)
 
         # 调用大模型生成知识点
         response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)

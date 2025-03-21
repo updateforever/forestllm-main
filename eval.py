@@ -72,7 +72,7 @@ def infer_answer_with_gpt4(thought_process, answer_candidate):
     请直接输出最可能的选项（A/B/C/D），不需要解释。
     """
     try:
-        gpt4_answer = run_chatgpt(query=prompt, model="gpt-4", num_tokens_request=10).strip()
+        gpt4_answer = run_agent(prompt, model="qwen")
         if is_valid_option(gpt4_answer):
             return gpt4_answer
     except Exception as e:

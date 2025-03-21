@@ -14,12 +14,13 @@
                 "--data-file",
                 // "/home/wyp/project/ForestLLM/data/mateinfo/web_deduped-1114.jsonl",
                 // "/home/wyp/project/ForestLLM/data/article4abs/merged_output.jsonl",
-                "/home/wyp/project/ForestLLM/data/mateinfo/books-1113.jsonl",
+                // "/home/wyp/project/ForestLLM/data/mateinfo/books-1113.jsonl",
+                "/home/wyp/project/forest/forestllm-main/mateinfo/all_book.jsonl",
                 // linyezixun_31342_final  books-1113  articals-1112
                 "--out-dir",
-                "/home/wyp/project/ForestLLM/outputs/0113",
+                "/home/wyp/project/forest/forestllm-main/outputs/0321",
                 "--step",
-                "2",
+                "3",
                 "--data_class",
                 "book",
             ]
