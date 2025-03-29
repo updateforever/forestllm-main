@@ -44,9 +44,9 @@ class QuestionSetter(BaseAgent):
 
         # 步骤2: 根据知识点的难度分配题型
         question_set = []
-        for point, difficulty in knowledge_points:
+        for point, difficulty, original_question in knowledge_points:
             question_set.extend(
-                self.generate_questions_for_point(point, difficulty, input_data)
+                self.generate_questions_for_point(point, original_question, difficulty, input_data)
             )
 
         return question_set
@@ -56,7 +56,7 @@ class QuestionSetter(BaseAgent):
         prompt_template = self.prompts[f"knowledge_extraction_{data_class}"]
 
         # 构建 prompt
-        prompt = prompt_template.format(text=text, length=len(text), q_num=len(text)/400)
+        prompt = prompt_template.format(text=text, length=len(text), q_num=len(text)/500)
 
         # 调用大模型生成知识点
         response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
@@ -67,19 +67,24 @@ class QuestionSetter(BaseAgent):
         # 解析生成的 JSON 格式的知识点
         try:
             knowledge_points = json.loads(json_content)
-            return [(kp["knowledge"], kp["difficulty"]) for kp in knowledge_points]
+            results = []
+            for item in knowledge_points:
+                for _, inner in item.items():  # 遍历外层唯一的 key
+                    results.append((inner["knowledge"], inner["difficulty"], inner['question']))
+            return results
+            # return [(kp["knowledge"], kp["difficulty"]) for kp in knowledge_points]
         except json.JSONDecodeError:
             print("JSON 解析错误，请检查生成的内容格式--提取知识点并评估难度")
             return []
 
-    def generate_questions_for_point(self, knowledge_point, difficulty, full_text):
+    def generate_questions_for_point(self, knowledge_point, original_question, difficulty, full_text):
         """根据知识点和难度生成适合的多种题型"""
         # 根据难度选择适合的题型
-        if difficulty == "simple":
+        if difficulty == "simple" or difficulty == "简单":
             question_types = ["multiple_choice"]
-        elif difficulty == "medium":
+        elif difficulty == "medium" or difficulty == "中等":
             question_types = ["short_answer"]
-        elif difficulty == "complex":
+        elif difficulty == "complex" or difficulty == "困难":
             question_types = ["open_discussion"]
         else:
             raise ValueError("未知难度级别")
@@ -90,21 +95,51 @@ class QuestionSetter(BaseAgent):
             # 从 prompts 中获取指定题型的 prompt 模板
             prompt_template = self.prompts[f"{q_type}"]
 
-            prompt = prompt_template.format(text=full_text, knowledge=knowledge_point)
-
-            # 调用 run_chatgpt 函数生成问题和答案
-            response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
-
-            questions.append(
-                {
-                    "knowledge": knowledge_point,
-                    "difficulty": difficulty,
-                    "question_type": q_type,
-                    "response": response,
-                }
+            prompt = prompt_template.format(
+                full_text=full_text,
+                knowledge_point=knowledge_point,
+                original_question=original_question,
             )
 
-        return questions
+            # 调用 run_chatgpt 函数生成问题和答案
+            response = run_agent(prompt, model=self.model, num_gen=1, temperature=0.7)
+
+            # 默认存 response
+            record = {
+                "knowledge": knowledge_point,
+                "difficulty": difficulty,
+                "question_type": q_type,
+            }
+            response = re.sub(r"```(?:json)?|```", "", response.strip())
+            parsed = json.loads(response)
+            # 🔸 如果是 multiple_choice，则尝试解析 JSON，并提取为 CSV 格式字段
+            if q_type == "multiple_choice":
+                # 安全获取选项，补齐到 4 个
+                options = parsed.get("options", [])
+                options = (options + ["", "", "", ""])[:4]
+
+                # 清洗字段，处理逗号转义
+                question_text = parsed.get("question", "").replace(",", "，")
+                answer_letter = parsed.get("answer", "").strip().upper()
+
+                # 构造 CSV 行字符串（字段顺序：question,A,B,C,D,answer）
+                csv_record = f'"{question_text}",{options[0]},{options[1]},{options[2]},{options[3]},{answer_letter}'
+
+                record["response"] = csv_record  # ✅ 添加 CSV 格式字段（便于后续保存）
+
+            elif q_type in ["short_answer", "open_discussion"]:
+                # 简答题和讨论题统一结构（字段相同）
+                question_text = parsed.get("question", "").replace(",", "，")
+                answer_text = parsed.get("answer", "").strip()
+
+                record["response"] = {
+                    "question": question_text,
+                    "answer": answer_text
+                }
+
+            questions.append(record)
+
+        return questions    
 
 
 class ExpertAgent(BaseAgent):
@@ -122,28 +157,38 @@ class ExpertAgent(BaseAgent):
         - question_data: 包含知识点、问题类型、初始问题和答案等信息的字典
         - data_class: 数据类别，用于决定扩展的深度和方式
         """
-        response = question_data["response"]
         knowledge_point = question_data["knowledge"]
         question_type = question_data["question_type"]
 
-        # Step 1: 评估试题质量
+        # ✅ 构造标准输入文本：用于评估 or 改写
+        if question_type == "multiple_choice":
+            eval_input = question_data.get("response", "")
+
+        elif question_type in ["short_answer", "open_discussion"]:
+            response = question_data.get("response", {})
+            question_text = response.get("question", "").strip()
+            answer_text = response.get("answer", "").strip()
+            eval_input = f"问题：{question_text}\n参考答案：{answer_text}"
+
+        # ✅ Step 1: 试题质量评估
         expert_feedback = self.evaluate_quality(
-            text, response, knowledge_point, question_type, data_class
+            text, eval_input, knowledge_point, question_type, data_class
         )
 
-        # Step 2: 根据评估结果改进试题
-        if expert_feedback["requires_refinement"]:
+        # ✅ Step 2: 根据需要进行改写
+        if expert_feedback.get("requires_refinement", False):
             expert_feedback["refined_response"] = self.refine_response(
-                text, response, knowledge_point, data_class, expert_feedback
+                text, eval_input, knowledge_point, data_class, expert_feedback
             )
         else:
             expert_feedback["refined_response"] = ""
 
         return expert_feedback  # 返回评估数据
 
-    def evaluate_quality(
-        self, text, response, knowledge_point, question_type, data_class="web"
-    ):
+    def evaluate_quality(self, text, response, 
+                         knowledge_point, question_type, 
+                         data_class="web"
+                         ):
         """评估试题质量并判断是否需要改进"""
         prompt = self.prompts[f"evaluate_quality_{data_class}"].format(
             text=text,
@@ -152,46 +197,31 @@ class ExpertAgent(BaseAgent):
             question_type=question_type,
         )
 
-        evaluation_response = run_agent(
-            prompt, model=self.model, num_gen=1, temperature=1
-        )
+        evaluation_response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
 
         # 文本格式解析
-        result = parse_output(evaluation_response)
+        evaluation_response = re.sub(r"```(?:json)?|```", "", evaluation_response.strip())
+        result = json.loads(evaluation_response)
+        # 字段转小写 key（兼容模型大小写误差）
+        result = {k.lower(): v for k, v in result.items()}
+        # 6. 判断是否字段缺失或分数太低
+        delete_data = any(
+            result.get(k) is None or result.get(k) < 6
+            for k in ["quality score", "relevance score", "consistency score"]
+        )
+        requires_refinement = result.get("quality score", 0) < 6
 
-        # 判断是否需要删除数据
-        delete_data = False
-
-        # 判断是否成功提取
-        if (
-            result["quality_score"] is None
-            or result["relevance_score"] is None
-            or result["consistency_score"] is None
-        ):
-            delete_data = True
-        else:
-            # 判断各分值是否符合标准，例如都要求 ≥5
-            if (
-                result["quality_score"] < 6
-                or result["relevance_score"] < 6
-                or result["consistency_score"] < 6
-            ):
-                delete_data = True
-
-        # 根据评分确定是否需要改进（假设评分低于 7 表示需要改进）
-        requires_refinement = result["quality_score"] < 6
+        # 返回结构
         return {
             "requires_refinement": requires_refinement,
             "delete_data": delete_data,
-            "quality_score": result["quality_score"],
-            "relevance_score": result["relevance_score"],
-            "consistency_score": result["consistency_score"],
-            "improvement_suggestions": result["improvement_suggestions"],
+            "quality_score": result.get("quality score"),
+            "relevance_score": result.get("relevance score"),
+            "consistency_score": result.get("consistency score"),
+            "improvement_suggestions": result.get("improvement suggestions", ""),
         }
 
-    def refine_response(
-        self, text, response, knowledge_point, data_class, expert_feedback
-    ):
+    def refine_response(self, text, response, knowledge_point, data_class, expert_feedback):
         """
         根据评估反馈改进问题和答案。
 
@@ -204,10 +234,6 @@ class ExpertAgent(BaseAgent):
         # 获取用于改进的 prompt
         prompt_template = self.prompts[f"refine_response_{data_class}"]
 
-        # 如果 prompt 不存在，抛出异常
-        if not prompt_template:
-            raise ValueError(f"未找到适合 {data_class} 的 refine_response prompt")
-
         # 填充 prompt 模板
         prompt = prompt_template.format(
             text=text,
@@ -218,8 +244,12 @@ class ExpertAgent(BaseAgent):
 
         # 调用大模型生成改进后的内容
         refined_response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
-
-        return refined_response.strip()
+        refined_response = re.sub(r"```(?:json)?|```", "", refined_response.strip())
+        parsed = json.loads(refined_response)
+        return {
+            "question": parsed.get("question", "").strip(),
+            "answer": parsed.get("answer", "").strip()
+        }
 
 
 class VirtualTeacherAgent(BaseAgent):
@@ -232,6 +262,8 @@ class VirtualTeacherAgent(BaseAgent):
 
     def generate_thinking_chain(self, text, response, data_class):
         """生成思维链，用于引导学生思考和推理答案"""
+        if isinstance(response, list):
+            response = response[0] + ", " + response[1]
         # 获取思维链生成模板
         prompt_template = self.prompts.get(
             f"generate_chain_of_thought_{data_class}", {}
@@ -239,10 +271,13 @@ class VirtualTeacherAgent(BaseAgent):
         prompt = prompt_template.format(response=response)
 
         # 使用模型生成思维链
-        thinking_chain = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
-
+        thinking_chain = run_agent(prompt, model=self.model, num_gen=1, temperature=0.8)
+        thinking_chain = re.sub(r"```(?:json)?|```", "", thinking_chain.strip())
+        parsed = json.loads(thinking_chain)
+        # 获取思维链
+        formatted_thinking_chain = parsed.get("CoT", "").strip()
         # 返回结果
-        return thinking_chain
+        return formatted_thinking_chain
 
     def convert_to_conversational_form(self, text, response, data_class):
         """将选择题转换为更自然的口语化对话形式"""
@@ -252,11 +287,25 @@ class VirtualTeacherAgent(BaseAgent):
 
         # 使用模型生成对话形式
         conversational_response = run_agent(
-            prompt, model=self.model, num_gen=1, temperature=1
+            prompt, model=self.model, num_gen=1, temperature=0.7
         )
+        conversational_response = re.sub(r"```(?:json)?|```", "", conversational_response.strip())
+        # 拼接问题和答案
+        try:
+            parsed_response = json.loads(conversational_response)
+            question = parsed_response.get("input", "").strip()
+            answer = parsed_response.get("output", "").strip()
+            
+            # 拼接问题和答案
+            conversational_form = f"问题: {question}\n回答: {answer}"
 
-        # 返回结果
-        return conversational_response
+        except json.JSONDecodeError as e:
+            # 如果返回的结果不能被解析为 JSON，直接返回原始内容
+            conversational_form = conversational_response
+
+        # 返回拼接后的对话内容
+        return conversational_form
+
 
     def cot_deepseek(self, response):
         """生成思维链，用于引导学生思考和推理答案"""
@@ -274,27 +323,3 @@ class VirtualTeacherAgent(BaseAgent):
         # 返回结果
         return thinking_chain
 
-
-class TrainingInstituteAgent(BaseAgent):
-    """培训机构专家 Agent，用于将测试问题和答案转换为对话形式"""
-
-    def __init__(self, model="qwen"):
-        super().__init__(name="TrainingInstituteAgent", model=model)
-
-    def convert_to_conversational_form(self, text, response, data_class):
-        """将测试形式的问题和答案转换为更自然的对话形式"""
-        # 获取相应的 prompt 模板
-        prompt_template = (
-            self.prompts["convert_to_conversation"]
-            .get(f"prompt_{data_class}", {})
-            .get("prompt_cn", "")
-        )
-        prompt = prompt_template.format(text=text, response=response)
-
-        # 生成对话格式
-        conversational_response = run_agent(
-            prompt, model=self.model, num_gen=1, temperature=1
-        )
-
-        # 返回结果
-        return conversational_response

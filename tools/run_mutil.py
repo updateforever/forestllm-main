@@ -490,17 +490,9 @@ def process_entry_with_logging(entry, queue: Queue, *args):
 
 
 # 加载数据函数省略（与你当前代码相同）
-def process_entry(
-    entry,
-    out_file,
-    question_setter,
-    expert_agent,
-    virtual_teacher,
-    learner,
-    grader,
-    step,
-    data_class,
-):
+def process_entry(entry, out_file, question_setter,
+    expert_agent, virtual_teacher, learner,
+    grader, step, data_class):
     """
     处理单个数据条目，包括所有阶段，支持阶段性执行，并动态补全前置步骤。
     :param entry: 单条数据条目

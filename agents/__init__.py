@@ -1,4 +1,4 @@
-from .agent import QuestionSetter, ExpertAgent, TrainingInstituteAgent, VirtualTeacherAgent
+from .agent import QuestionSetter, ExpertAgent, VirtualTeacherAgent
 from .student import SimulatedLearner
 from .grader import GradingTeacher
 
@@ -6,7 +6,6 @@ from .grader import GradingTeacher
 __all__ = [
     "QuestionSetter",
     "ExpertAgent",
-    "TrainingInstituteAgent",
     "VirtualTeacherAgent",
     "SimulatedLearner",
     "GradingTeacher",

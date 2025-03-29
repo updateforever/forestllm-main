@@ -57,9 +57,27 @@ def extract_answer_from_think(output_text):
         return thought_process, answer_candidate
     return None, output_text.strip()  # 没有 `<think>`，直接返回整个输出
 
+def extract_first_option(text):
+    """
+    从文本中提取第一个有效选项（A/B/C/D），
+    支持格式：A、A)、A.、选项A、答案是A 等。
+    """
+    short_text = text.strip()[:100].upper()
+    match = re.search(r"\b([ABCD])[\s\).，、。]?", short_text)
+    if match:
+        return match.group(1)
+    return None
+
 def is_valid_option(answer):
-    """检查答案是否为有效的 A/B/C/D 选项"""
-    return answer in ["A", "B", "C", "D"]
+    """
+    判断是否为有效的选项 A/B/C/D。
+    - 优先尝试精确匹配
+    - 再使用宽松规则提取
+    """
+    cleaned = answer.strip().upper()
+    if cleaned in ["A", "B", "C", "D"]:
+        return True
+    return extract_first_option(cleaned) is not None
 
 def infer_answer_with_gpt4(thought_process, answer_candidate):
     """如果答案不是有效选项，调用 GPT-4 进行推理"""
@@ -166,12 +184,18 @@ def generate_text(model, tokenizer, input_texts, max_new_tokens=256, temperature
     for output in output_texts:
         thought_process, answer_candidate = extract_answer_from_think(output)
 
-        if is_valid_option(answer_candidate):
-            final_answers.append(answer_candidate)  # 直接返回 A/B/C/D
+        # if is_valid_option(answer_candidate):
+        #     final_answers.append(answer_candidate)  # 直接返回 A/B/C/D
+        # else:
+        #     gpt4_answer = infer_answer_with_gpt4(thought_process, answer_candidate)
+        #     final_answers.append(gpt4_answer)
+        option = extract_first_option(answer_candidate) if not answer_candidate.strip() in ["A", "B", "C", "D"] else answer_candidate.strip()
+
+        if option:
+            final_answers.append(option)
         else:
             gpt4_answer = infer_answer_with_gpt4(thought_process, answer_candidate)
             final_answers.append(gpt4_answer)
-
     return final_answers
 
 def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evaluation_method, output_dir):
@@ -201,32 +225,3 @@ def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evalu
 
     save_results(output_dir, predictions, references_list, evaluation_results)
     logger.info(f"评估结果已保存至 {output_dir}")
-
-
-def main():
-    """主函数"""
-    parser = argparse.ArgumentParser(description="大模型评估管线")
-    parser.add_argument("--model_path", type=str, default="/home/wyp/project/ms-swift/models/ds-qwen7b-sft/", help="本地模型路径")
-    parser.add_argument("--input_file", type=str, default="outputs/eval_data/forest_val_v1.csv", help="输入数据文件")
-    parser.add_argument("--output_dir", type=str, default="outputs/eval_data/", help="评估结果存储目录")
-    parser.add_argument("--task_type", type=str, choices=["mcq", "qa"], default="mcq", help="任务类型")
-    parser.add_argument("--evaluation_method", type=str, choices=["metrics", "gpt4", "manual"], default="metrics", help="评估方式")
-    parser.add_argument("--batch_size", type=int, default=2, help="批量推理大小")
-    parser.add_argument("--max_new_tokens", type=int, default=256, help="最大生成长度")
-    parser.add_argument("--temperature", type=float, default=0.1, help="生成温度")
-
-    args = parser.parse_args()
-
-    model, tokenizer = load_model(args.model_path, temperature=args.temperature)
-    output_dir = os.path.join(args.output_dir, args.model_path.split("/")[-1])
-    os.makedirs(output_dir, exist_ok=True)
-    print("评估结果将存储在：", output_dir)
-
-    dataloader, total_batches  = get_dataloader(args.input_file, batch_size=args.batch_size, task_type=args.task_type)
-    evaluate_model(
-        model, tokenizer, dataloader, total_batches, args.task_type, args.evaluation_method, output_dir
-    )
-
-
-if __name__ == "__main__":
-    main()
