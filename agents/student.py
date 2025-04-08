@@ -93,8 +93,8 @@ class SimulatedLearner(BaseAgent):
 
     def answer_questions_batch(self, response_data_list):
         """批量生成模拟考生的回答"""
-        questions = [extract_question(data['response'])[0] for data in response_data_list]
-        prompts = [self.prompt.format(question=q) for q in questions]
+
+        prompts = [self.prompt.format(question=q) for q in response_data_list]
 
         all_answers = []
         for model, tokenizer in zip(self.models, self.tokenizers):

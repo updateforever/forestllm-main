@@ -23,6 +23,7 @@
                 "3",
                 "--data_class",
                 "book",
+                "--num_works", "32"
             ]
         },
         {

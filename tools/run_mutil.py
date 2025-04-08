@@ -21,6 +21,7 @@ from agents import (
 )
 from utils.toolkit import clean_book_text, filter_web_text
 from datetime import datetime
+import time
 
 # 获取当前时间，格式化为文件名友好的字符串
 timestamp = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
@@ -40,103 +41,45 @@ logging.basicConfig(
 
 # ===== 多线程操作 ===== #
 # 保存数据的线程函数
-def data_saver(queue: Queue, output_file: str, stop_event: Event):
+def data_saver(queue: Queue, output_file: str, stop_event: Event, batch_size: int = 5):
     """
-    从队列中读取数据并保存到文件，支持批量保存。
+    从队列中读取数据并批量保存到 JSONL 文件。
+    文件写入采用“读-改-写”策略，支持根据 ID 更新 steps。
+    
     :param queue: 存储数据的线程安全队列
-    :param output_file: 保存数据的目标文件路径
+    :param output_file: 输出 JSONL 文件路径
     :param stop_event: 停止信号，用于安全关闭线程
+    :param batch_size: 每次写入的最小数据量
     """
     buffer = []
+
     while not stop_event.is_set() or not queue.empty():
         try:
-            data = queue.get(timeout=0.1)  # 从队列中获取数据
+            data = queue.get(timeout=0.1)
             buffer.append(data)
-            queue.task_done()  # 标记队列任务完成
-
-            # 批量写入数据（每 10 条写一次）
-            if len(buffer) >= 5:
-                _write_to_file(output_file, buffer)
-                buffer.clear()
+            queue.task_done()
         except Empty:
             continue
 
-    # 写入剩余数据
+        if len(buffer) >= batch_size:
+            _write_to_file(output_file, buffer)
+            buffer.clear()
+
+    # 程序结束时写入剩余数据
     if buffer:
         _write_to_file(output_file, buffer)
 
 
-# def _write_to_file(output_file: str, data: list):
-#     """
-#     将数据写入文件，支持文件合并。
-#     """
-#     if os.path.exists(output_file):
-#         with open(output_file, "r+", encoding="utf-8") as f:
-#             existing_data = json.load(f)
-#             existing_data.extend(data)
-#             f.seek(0)
-#             json.dump(existing_data, f, ensure_ascii=False, indent=4)
-#     else:
-#         with open(output_file, "w", encoding="utf-8") as f:
-#             json.dump(data, f, ensure_ascii=False, indent=4)
-
-
 def _write_to_file(output_file: str, new_data: list):
     """
-    将数据写入文件，避免数据重复，并确保 step 进展最新。
+    将数据写入 .jsonl 文件，直接追加写入，不做去重。
+    后续可通过独立脚本去重。
     """
-    # 如果文件不存在，直接写入新数据
-    if not os.path.exists(output_file):
-        with open(output_file, "w", encoding="utf-8") as f:
-            json.dump(new_data, f, ensure_ascii=False, indent=4)
-        return
-
-    # 加载已有数据，存入字典 {id: entry}
-    id_map = {}
-    try:
-        with open(output_file, "r", encoding="utf-8") as f:
-            existing_data = json.load(f)
-            for entry in existing_data:
-                if "id" in entry:
-                    id_map[entry["id"]] = entry
-    except json.JSONDecodeError:
-        logging.error(f"文件解析失败: {output_file}")
-        existing_data = []
-
-    # 处理新数据
-    for new_entry in new_data:
-        entry_id = new_entry.get("id")
-        if not entry_id:
-            continue  # 跳过没有 ID 的数据
-
-        if entry_id in id_map:
-            # 旧数据
-            existing_entry = id_map[entry_id]
-
-            # 合并 steps 信息，确保最新进展
-            existing_steps = existing_entry.get("steps", {})
-            new_steps = new_entry.get("steps", {})
-
-            # 更新 steps：如果新数据包含更新的 step，则替换
-            merged_steps = {**existing_steps, **new_steps}
-            existing_entry["steps"] = merged_steps
-
-            # 其余字段合并（保持新数据优先）
-            for key, value in new_entry.items():
-                if key != "steps":
-                    existing_entry[key] = value
-        else:
-            # 新数据，直接添加
-            id_map[entry_id] = new_entry
-
-    # 写回文件
-    with open(output_file, "w", encoding="utf-8") as f:
-        json.dump(list(id_map.values()), f, ensure_ascii=False, indent=4)
-
+    with open(output_file, "a", encoding="utf-8") as f:
+        for entry in new_data:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
 
 # ==== tools ==== #
-
-
 def load_data(data_file):
     """从JSONL文件中加载数据"""
     data = []
@@ -175,41 +118,32 @@ def infer_data_class(data_file):
         logging.error(f"推断 data_class 时出错: {e}")
         return "unknown"
 
-
+# 加载存在数据
 def load_existing_data(out_folder, model_name, data_class):
     """
-    加载已存在的模型生成数据（支持 JSON 和 JSONL 格式）
-    :param out_folder: 输出文件夹路径
-    :param model_name: 模型名称
-    :param data_class: 数据类别（如 web, article, book）
-    :return: (out_file, id_set, existing_data)
+    兼容从 .json/.jsonl 文件读取已有数据，统一输出为 jsonl。
     """
-    if out_folder.endswith("json"):
-        out_file = out_folder
+    if out_folder.endswith("jsonl"): 
+        out_file = out_folder  # 直接是完整的 jsonl 文件路径
     else:
-        out_file = os.path.join(out_folder, f"{model_name}_{data_class}_output.json")
+        out_file = os.path.join(out_folder, f"{model_name}_{data_class}_output.jsonl")  # 自动拼接命名
 
-    existing_data = []
     id_set = set()
+    existing_data = []
 
     if os.path.exists(out_file):
-        logging.info(f"检测到文件: {out_file}，开始加载已生成数据...")
-        try:
-            with open(out_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                for entry in data:
-                    if "id" in entry:
-                        id_set.add(entry["id"])
-                        existing_data.append(entry)
-        except json.JSONDecodeError:
-            logging.error(f"文件解析失败: {out_file}")
-        except Exception as e:
-            logging.error(f"加载文件时发生错误: {e}")
-    else:
-        logging.warning(f"未找到模型 {model_name} 对应的输出文件: {out_file}")
+        logging.info(f"加载已有处理数据文件: {out_file}")
+        with open(out_file, "r", encoding="utf-8") as f:
+            existing_data = [json.loads(line.strip()) for line in f if line.strip()]
 
-    logging.info(f"成功加载 {len(existing_data)} 条数据，来自文件: {out_file}")
+    # 提取已存在的 id
+    for entry in existing_data:
+        if "id" in entry:
+            id_set.add(entry["id"])
+
+    logging.info(f"已有数据数量: {len(existing_data)}，将继续保存到: {out_file}")
     return out_file, id_set, existing_data
+
 
 
 # 检查当前数据是否存在
@@ -224,34 +158,11 @@ def find_entry_by_id(out_file, entry_id):
         logging.warning(f"文件不存在: {out_file}")
         return {"id": entry_id, "steps": {}}
 
-    try:
-        # 检查文件扩展名，判断是 JSON 还是 JSONL 格式
-        if out_file.endswith(".json"):
-            with open(out_file, "r", encoding="utf-8") as f:
-                data = json.load(f)
-                for entry in data:
-                    if entry.get("id") == entry_id:
-                        return entry
-
-        elif out_file.endswith(".jsonl"):
-            with open(out_file, "r", encoding="utf-8") as f:
-                for line in f:
-                    try:
-                        entry = json.loads(line.strip())
-                        if entry.get("id") == entry_id:
-                            return entry
-                    except json.JSONDecodeError:
-                        logging.warning(f"跳过无效的 JSON 行: {line.strip()}")
-                        continue
-
-        else:
-            logging.error(f"不支持的文件格式: {out_file}")
-            return {"id": entry_id, "steps": {}}
-
-    except json.JSONDecodeError as e:
-        logging.error(f"JSON 解析失败: {e}")
-    except Exception as e:
-        logging.error(f"查找 ID 时发生未知错误: {e}")
+    with open(out_file, "r", encoding="utf-8") as f:
+        for line in f:
+            entry = json.loads(line.strip())
+            if entry.get("id") == entry_id:
+                return entry
 
     return {"id": entry_id, "steps": {}}
 
@@ -365,13 +276,15 @@ def process_virtual_teacher(entry, virtual_teacher):
             conversational_form = virtual_teacher.convert_to_conversational_form(
                 entry["text"], current_question, entry.get("class", "")
             )
+            cot = virtual_teacher.generate_thinking_chain(
+                entry["text"], conversational_form, entry.get("class", "")
+            )
         else:
             conversational_form = ""
-
-        # 生成思维链（CoT）
-        cot = virtual_teacher.generate_thinking_chain(
-            entry["text"], current_question, entry.get("class", "")
-        )
+            # 生成思维链（CoT）
+            cot = virtual_teacher.generate_thinking_chain(
+                entry["text"], current_question, entry.get("class", "")
+            )
 
         # 保存结果
         processed_results.append(
@@ -464,13 +377,10 @@ def process_grader(entry, grader):
 
     return entry
 
-
 # ===== tools end ===== #
 
 
 # ===== main start ===== #
-
-
 # 包装 process_entry，添加到队列
 def process_entry_with_logging(entry, queue: Queue, *args):
     try:
@@ -483,13 +393,13 @@ def process_entry_with_logging(entry, queue: Queue, *args):
             queue.put(result)
         else:
             logging.warning(
-                f"Skipping entry for low information density or low value: {text_info}"
+                f"跳过空返回值数据: {text_info}"
             )
     except Exception as e:
         logging.error(f"Error processing entry: {text_info}. Details: {e}")
 
 
-# 加载数据函数省略（与你当前代码相同）
+# 加载数据函数省略
 def process_entry(entry, out_file, question_setter,
     expert_agent, virtual_teacher, learner,
     grader, step, data_class):
@@ -522,12 +432,13 @@ def process_entry(entry, out_file, question_setter,
         # logging.info(f"数据由于低价值或无效而被跳过")
         return None
 
-    # 1️⃣ **加载数据状态**
+    # 1️⃣ **检查是否已处理过该条数据**
     existing_entry = find_entry_by_id(out_file, entry_id)
-    if not existing_entry:
-        existing_entry = {"id": entry_id, "steps": {}}
+    if existing_entry and existing_entry.get("steps", {}).get(str(step)) == "completed":
+        logging.info(f"Step {step}: 已完成，跳过 entry_id={entry_id}")
+        return None
 
-    # 合并 entry 数据到 existing_entry
+    # 合并 entry 数据到 existing_entry 为了把原始语料加进去
     existing_entry.update(entry)
 
     steps = existing_entry.get("steps", {})
@@ -652,7 +563,7 @@ def main():
     # 初始化队列和保存线程
     data_queue = Queue()
     stop_event = Event()
-    saver_thread = Thread(target=data_saver, args=(data_queue, out_file, stop_event))
+    saver_thread = Thread(target=data_saver, args=(data_queue, out_file, stop_event, args.num_works))
     saver_thread.start()
 
     # 多线程处理数据
@@ -680,3 +591,6 @@ def main():
 
 if __name__ == "__main__":
     main()
+
+
+# python tools/run_mutil.py --data-file /home/wyp/project/forest/forestllm-main/mateinfo/all_book.jsonl --out-dir /home/wyp/project/forest/forestllm-main/outputs/0321 --step 3 --data_class book --num_works 8

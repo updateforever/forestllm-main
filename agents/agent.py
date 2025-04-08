@@ -45,6 +45,10 @@ class QuestionSetter(BaseAgent):
         # 步骤2: 根据知识点的难度分配题型
         question_set = []
         for point, difficulty, original_question in knowledge_points:
+            if point == "解析错误":
+                # 直接跳过这条数据
+                print(f"跳过该数据：{original_question}")
+                return knowledge_points
             question_set.extend(
                 self.generate_questions_for_point(point, original_question, difficulty, input_data)
             )
@@ -59,23 +63,34 @@ class QuestionSetter(BaseAgent):
         prompt = prompt_template.format(text=text, length=len(text), q_num=len(text)/500)
 
         # 调用大模型生成知识点
-        response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
+        response = run_agent(prompt, model=self.model, num_gen=1, temperature=0.3)
 
-        # 使用正则表达式去除格式标记，如 ```json 和 ```
-        json_content = re.sub(r"```(?:json)?|```", "", response.strip())
-
-        # 解析生成的 JSON 格式的知识点
+        # 去除 markdown 格式标记
+        clean_text = re.sub(r"```(?:json)?|```", "", response.strip())
+        results = []
         try:
-            knowledge_points = json.loads(json_content)
-            results = []
-            for item in knowledge_points:
-                for _, inner in item.items():  # 遍历外层唯一的 key
-                    results.append((inner["knowledge"], inner["difficulty"], inner['question']))
-            return results
-            # return [(kp["knowledge"], kp["difficulty"]) for kp in knowledge_points]
+            # 直接解析
+            knowledge_points = json.loads(clean_text)
         except json.JSONDecodeError:
-            print("JSON 解析错误，请检查生成的内容格式--提取知识点并评估难度")
-            return []
+            # print("⚠️ 初次 JSON 解析失败，尝试从文本中提取 JSON 数组部分")
+            match = re.search(r"\[\s*{[\s\S]*?}\s*\]", clean_text)
+            if match:
+                try:
+                    json_str = match.group(0)
+                    knowledge_points = json.loads(json_str)
+                except json.JSONDecodeError:
+                    print(f"❌ 二次 JSON 解析失败{clean_text}")
+                    return results
+            else:
+                print(f"❌ 未找到合法的 JSON 数组结构{clean_text}")
+                return results
+
+        # 提取结构化数据
+        for item in knowledge_points:
+            for _, inner in item.items():
+                results.append((inner["knowledge"], inner["difficulty"], inner["question"]))
+
+        return results
 
     def generate_questions_for_point(self, knowledge_point, original_question, difficulty, full_text):
         """根据知识点和难度生成适合的多种题型"""
@@ -102,7 +117,7 @@ class QuestionSetter(BaseAgent):
             )
 
             # 调用 run_chatgpt 函数生成问题和答案
-            response = run_agent(prompt, model=self.model, num_gen=1, temperature=0.7)
+            response = run_agent(prompt, model=self.model, num_gen=1, temperature=0.3)
 
             # 默认存 response
             record = {
@@ -197,7 +212,7 @@ class ExpertAgent(BaseAgent):
             question_type=question_type,
         )
 
-        evaluation_response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
+        evaluation_response = run_agent(prompt, model=self.model, num_gen=1, temperature=0.3)
 
         # 文本格式解析
         evaluation_response = re.sub(r"```(?:json)?|```", "", evaluation_response.strip())
@@ -243,7 +258,7 @@ class ExpertAgent(BaseAgent):
         )
 
         # 调用大模型生成改进后的内容
-        refined_response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
+        refined_response = run_agent(prompt, model=self.model, num_gen=1, temperature=0.3)
         refined_response = re.sub(r"```(?:json)?|```", "", refined_response.strip())
         parsed = json.loads(refined_response)
         return {
@@ -262,8 +277,11 @@ class VirtualTeacherAgent(BaseAgent):
 
     def generate_thinking_chain(self, text, response, data_class):
         """生成思维链，用于引导学生思考和推理答案"""
-        if isinstance(response, list):
-            response = response[0] + ", " + response[1]
+        if isinstance(response, dict):
+            question = response.get('question', '')
+            answer = response.get('answer', '')
+            response = f"试题: {question} 参考答案: {answer}"
+
         # 获取思维链生成模板
         prompt_template = self.prompts.get(
             f"generate_chain_of_thought_{data_class}", {}
@@ -271,7 +289,7 @@ class VirtualTeacherAgent(BaseAgent):
         prompt = prompt_template.format(response=response)
 
         # 使用模型生成思维链
-        thinking_chain = run_agent(prompt, model=self.model, num_gen=1, temperature=0.8)
+        thinking_chain = run_agent(prompt, model=self.model, num_gen=1, temperature=0.5)
         thinking_chain = re.sub(r"```(?:json)?|```", "", thinking_chain.strip())
         parsed = json.loads(thinking_chain)
         # 获取思维链
@@ -287,7 +305,7 @@ class VirtualTeacherAgent(BaseAgent):
 
         # 使用模型生成对话形式
         conversational_response = run_agent(
-            prompt, model=self.model, num_gen=1, temperature=0.7
+            prompt, model=self.model, num_gen=1, temperature=0.5
         )
         conversational_response = re.sub(r"```(?:json)?|```", "", conversational_response.strip())
         # 拼接问题和答案
@@ -297,11 +315,17 @@ class VirtualTeacherAgent(BaseAgent):
             answer = parsed_response.get("output", "").strip()
             
             # 拼接问题和答案
-            conversational_form = f"问题: {question}\n回答: {answer}"
+            conversational_form = {
+                    "question": question,
+                    "answer": answer
+                }
 
         except json.JSONDecodeError as e:
             # 如果返回的结果不能被解析为 JSON，直接返回原始内容
-            conversational_form = conversational_response
+            conversational_form = {
+                    "question": '',
+                    "answer": ''
+                }
 
         # 返回拼接后的对话内容
         return conversational_form
@@ -318,7 +342,7 @@ class VirtualTeacherAgent(BaseAgent):
         prompt = response
 
         # 使用模型生成思维链
-        thinking_chain = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
+        thinking_chain = run_agent(prompt, model=self.model, num_gen=1, temperature=0.5)
 
         # 返回结果
         return thinking_chain

@@ -87,7 +87,7 @@ EVALUATE_QUALITY_BOOK_CN = """
   "Quality Score": <1-10>,
   "Relevance Score": <1-10>,
   "Consistency Score": <1-10>,
-  "Improvement Suggestions": "<一句话具体建议>"
+  "Improvement Suggestions": "<简短的中文改进建议>"
 }}
 ❌ 禁止添加任何额外文字、格式说明或非 JSON 内容。
 """
