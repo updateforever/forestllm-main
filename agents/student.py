@@ -27,6 +27,7 @@ class SimulatedLearner(BaseAgent):
         # 加载多个模型
         if model_paths and model_platforms:
             for model_path, model_platform in zip(model_paths, model_platforms):
+                print(f"load model from local: {model_path}")
                 self.load_model(model_platform, model_path)
         else:
             # 默认处理模型API
@@ -101,9 +102,9 @@ class SimulatedLearner(BaseAgent):
             if tokenizer:
                 if 'mini' in model.model_dir or 'llama' in model.model_dir:
                     tokenizer.pad_token = tokenizer.eos_token
-                inputs = tokenizer(prompts, padding=True, truncation=True, max_length=256, padding_side='left', return_tensors="pt").to(model.device)
+                inputs = tokenizer(prompts, padding=True, truncation=True, max_length=768, padding_side='left', return_tensors="pt").to(model.device)
                 input_length = inputs["input_ids"].shape[1]
-                outputs = model.generate(**inputs, max_length=512, no_repeat_ngram_size=2)
+                outputs = model.generate(**inputs, max_length=512, no_repeat_ngram_size=2, temperature=0.5)
                 answers = tokenizer.batch_decode(outputs[:, input_length:], skip_special_tokens=True)
                 all_answers.append(answers)
             else:

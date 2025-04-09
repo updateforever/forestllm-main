@@ -69,7 +69,7 @@ def process_batch(entries: List[dict], learner: SimulatedLearner) -> List[dict]:
         """从问答题结构中提取问题文本"""
         if isinstance(q_data, dict) and "question" in q_data:
             return q_data["question"]
-        return str(q_data)  # fallback
+        return str(q_data[:-2])  # fallback
 
 
     for entry in entries:
@@ -88,7 +88,7 @@ def process_batch(entries: List[dict], learner: SimulatedLearner) -> List[dict]:
                 q_text = refined_list[i]["refined_response"]
             else:
                 q_text = q.get("response", "")
-
+                
             # 问答题需要解析出来问题
             q_text = extract_question(q_text)
 
@@ -115,9 +115,9 @@ def run_step4(input_path: str, output_path: str, batch_size: int = 20):
     learner = SimulatedLearner(
         model_api=["qwen"],
         model_paths=[
-            # "/home/wyp/project/swift/models/qwen25_7b_ins",
+            "/home/wyp/project/swift/models/qwen25_7b_ins",
             "/home/wyp/project/swift/models/minicpm3-4b",
-            # "/home/wyp/project/swift/models/llama_3_1_8b_ins",
+            "/home/wyp/project/swift/models/llama_3_1_8b_ins",
         ],
         model_platforms=["modelscope", "modelscope", "modelscope"],
     )
@@ -136,7 +136,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser()
     parser.add_argument("--input_path", type=str, default="/home/wyp/project/forest/forestllm-main/outputs/0321/qwen_book_output.jsonl", help="原始 jsonl 文件")
     parser.add_argument("--output_path", type=str, default="/home/wyp/project/forest/forestllm-main/outputs/0321/qwen_book_output_step4.jsonl", help="输出 jsonl 路径")
-    parser.add_argument("--batch_size", type=int, default=10)
+    parser.add_argument("--batch_size", type=int, default=1)
     args = parser.parse_args()
     run_step4(args.input_path, args.output_path, args.batch_size)
 
