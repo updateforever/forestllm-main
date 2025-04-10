@@ -69,8 +69,18 @@ def process_batch(entries: List[dict], learner: SimulatedLearner) -> List[dict]:
         """从问答题结构中提取问题文本"""
         if isinstance(q_data, dict) and "question" in q_data:
             return q_data["question"]
-        return str(q_data[:-2])  # fallback
+        elif isinstance(q_data, str):
+            # 尝试匹配选择题格式：题干,选项A,选项B,选项C,选项D,答案
+            parts = [p.strip() for p in q_data.split(",")]
+            if len(parts) >= 6:
+                stem = parts[0]
+                options = parts[1:5]
+                labels = ["A", "B", "C", "D"]
+                options_formatted = "".join(f"{label}.{opt}" for label, opt in zip(labels, options))
+                return f"{stem}{options_formatted}"
 
+        return q_data.strip()  # fallback：不符合格式就原样返回
+        
 
     for entry in entries:
         question_list = entry.get("question_setter", {}).get("questions", [])
@@ -88,11 +98,17 @@ def process_batch(entries: List[dict], learner: SimulatedLearner) -> List[dict]:
                 q_text = refined_list[i]["refined_response"]
             else:
                 q_text = q.get("response", "")
-                
+
             # 问答题需要解析出来问题
             q_text = extract_question(q_text)
 
-            learner_inputs.append(q_text)
+            if q_text.strip():  # ✅ 保证非空
+                learner_inputs.append(q_text)
+
+        if not learner_inputs:
+            logging.warning(f"跳过空 entry: {entry['id']}")
+            continue
+
 
         # 批量生成答案
         batch_answers = learner.answer_questions_batch(learner_inputs)
@@ -115,9 +131,9 @@ def run_step4(input_path: str, output_path: str, batch_size: int = 20):
     learner = SimulatedLearner(
         model_api=["qwen"],
         model_paths=[
-            "/home/wyp/project/swift/models/qwen25_7b_ins",
-            "/home/wyp/project/swift/models/minicpm3-4b",
-            "/home/wyp/project/swift/models/llama_3_1_8b_ins",
+            "/mnt/sda/wyp/models/qwen25",
+            # "/mnt/sda/wyp/models/MiniCPM3-4B",
+            "/mnt/sda/wyp/models/llama",
         ],
         model_platforms=["modelscope", "modelscope", "modelscope"],
     )
@@ -134,8 +150,8 @@ def run_step4(input_path: str, output_path: str, batch_size: int = 20):
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser()
-    parser.add_argument("--input_path", type=str, default="/home/wyp/project/forest/forestllm-main/outputs/0321/qwen_book_output.jsonl", help="原始 jsonl 文件")
-    parser.add_argument("--output_path", type=str, default="/home/wyp/project/forest/forestllm-main/outputs/0321/qwen_book_output_step4.jsonl", help="输出 jsonl 路径")
+    parser.add_argument("--input_path", type=str, default="/mnt/sda/wyp/forestllm-main/output/qwen_book_output.jsonl", help="原始 jsonl 文件")
+    parser.add_argument("--output_path", type=str, default="/mnt/sda/wyp/forestllm-main/output/qwen_book_output_step4.jsonl", help="输出 jsonl 路径")
     parser.add_argument("--batch_size", type=int, default=1)
     args = parser.parse_args()
     run_step4(args.input_path, args.output_path, args.batch_size)

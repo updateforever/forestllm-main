@@ -8,11 +8,11 @@ from torch.utils.data import Dataset, DataLoader
 class CustomDataset(Dataset):
     """ 自定义数据集，支持 MCQ 和 QA 任务，并采用 bucket sampling 进行 batch 划分 """
 
-    def __init__(self, file_path, task_type="mcq", num_buckets=10):
+    def __init__(self, file_path, task_type="mcq", num_buckets=10, model_mode='normal'):
         self.file_path = file_path
         self.task_type = task_type
         self.num_buckets = num_buckets  # 多少个长度桶
-        self.inputs, self.references, self.lengths = self._load_data()
+        self.inputs, self.references, self.lengths = self._load_data(model_mode)
         
         # **按长度排序**
         self._sort_by_length()
@@ -20,7 +20,7 @@ class CustomDataset(Dataset):
         # **按照 bucket 采样**
         self.buckets = self._create_buckets()
 
-    def _load_data(self):
+    def _load_data(self, model_mode='normal'):
         """从 JSON 或 CSV 读取数据"""
         file_ext = os.path.splitext(self.file_path)[1].lower()
         inputs, references, input_lengths = [], [], []
@@ -39,8 +39,11 @@ class CustomDataset(Dataset):
                         question = row["question"]
                         options = f"A) {row['A']}\nB) {row['B']}\nC) {row['C']}\nD) {row['D']}"
                         answer = row["answer"].strip().upper()
-                        
-                        prompt = f"请阅读以下问题，并直接给出正确答案的选项。若需思考，请尽量进行短思考，并快速给出最终答案。\n\n问题：{question}\n{options}\n答案："
+
+                        if model_mode=='normal':
+                            prompt = f"请阅读以下问题，并直接给出正确答案的选项。若需思考，请尽量进行短思考，并快速给出最终答案。\n\n问题：{question}\n{options}\n答案："
+                        else:
+                            prompt = f"请解决以下问题。请将思考过程写在 <think> 和 </think> 标签中，并将最终答案写在 <answer> 和 </answer> 标签中。\n\n问题：{question}\n{options}\n答案："
                         
                         inputs.append(prompt)
                         references.append(answer)

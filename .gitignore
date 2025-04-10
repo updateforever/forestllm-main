@@ -63,3 +63,5 @@ outputs/
 benchmark/
 ODTrack_ep0300.pth.tar
 qwen_book_output.jsonl
+forest_eval/
+output/

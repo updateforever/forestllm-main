@@ -96,15 +96,15 @@ class SimulatedLearner(BaseAgent):
         """批量生成模拟考生的回答"""
 
         prompts = [self.prompt.format(question=q) for q in response_data_list]
-
+        
         all_answers = []
         for model, tokenizer in zip(self.models, self.tokenizers):
             if tokenizer:
-                if 'mini' in model.model_dir or 'llama' in model.model_dir:
+                if 'mini' in model.model_dir or 'llama' in model.model_dir or 'Mini' in model.model_dir:
                     tokenizer.pad_token = tokenizer.eos_token
-                inputs = tokenizer(prompts, padding=True, truncation=True, max_length=768, padding_side='left', return_tensors="pt").to(model.device)
+                inputs = tokenizer(prompts, padding=True, truncation=True, max_length=1024, padding_side='left', return_tensors="pt").to(model.device)
                 input_length = inputs["input_ids"].shape[1]
-                outputs = model.generate(**inputs, max_length=512, no_repeat_ngram_size=2, temperature=0.5)
+                outputs = model.generate(**inputs, max_new_tokens=512, no_repeat_ngram_size=2, temperature=0.7)
                 answers = tokenizer.batch_decode(outputs[:, input_length:], skip_special_tokens=True)
                 all_answers.append(answers)
             else:

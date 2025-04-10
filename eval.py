@@ -32,7 +32,7 @@ def load_model(model_path, temperature=1.0):
 
     # 加载 tokenizer
     tokenizer = AutoTokenizer.from_pretrained(model_path, trust_remote_code=True, padding_side='left')
-    print(tokenizer.truncation_side)  # 输出 "left"
+    # print(tokenizer.truncation_side)  # 输出 "left"
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token  # 解决 padding 问题
 
@@ -40,7 +40,7 @@ def load_model(model_path, temperature=1.0):
     model = AutoModelForCausalLM.from_pretrained(
         model_path, 
         device_map="auto",  # 自动分配到 GPU 或 CPU
-        torch_dtype=torch.float16 if torch.cuda.is_available() else torch.float32,
+        torch_dtype="auto",
         trust_remote_code=True  # 仅使用本地代码
     ).eval()  # 设为 eval 模式，避免训练时的 Dropout
 
@@ -110,7 +110,7 @@ def compute_mcq_accuracy(predictions, references):
     """计算多选题准确率"""
     correct = sum(1 for pred, ref in zip(predictions, references) if pred == ref)
     acc = correct / len(references) if references else 0
-    logger.info(f"多选题准确率: {acc:.4f}")
+    logger.info(f"单选题准确率: {acc:.4f}")
     return acc
 
 def compute_qa_metrics(predictions, references):
@@ -162,9 +162,11 @@ def save_results(output_dir, predictions, references, evaluation_results):
         json.dump(evaluation_results, f, ensure_ascii=False, indent=4)
     logger.info(f"🔹 评估指标已保存至 {metrics_file}")
 
-def generate_text(model, tokenizer, input_texts, max_new_tokens=256, temperature=1.0):
+def generate_text(model, tokenizer, input_texts, max_new_tokens=256, temperature=0.7):
     """使用 Hugging Face 进行文本生成（支持批量推理）"""
-    inputs = tokenizer(input_texts, return_tensors="pt", padding=True, truncation=True).to(model.device)
+    # if 'mini' in model.model_dir or 'llama' in model.model_dir or 'Mini' in model.model_dir:
+    #     tokenizer.pad_token = tokenizer.eos_token
+    inputs = tokenizer(input_texts, padding=True, truncation=True, max_length=1024, padding_side='left', return_tensors="pt").to(model.device)
     input_length = inputs["input_ids"].shape[1]  # 获取输入 token 的长度
 
     with torch.no_grad():
@@ -198,7 +200,7 @@ def generate_text(model, tokenizer, input_texts, max_new_tokens=256, temperature
             final_answers.append(gpt4_answer)
     return final_answers
 
-def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evaluation_method, output_dir):
+def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evaluation_method, output_dir, temperature):
     """使用 Hugging Face 进行评估（支持 PyTorch DataLoader）"""
     logger.info(f"开始评估模型: {task_type}")
 
@@ -207,7 +209,7 @@ def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evalu
 
     with tqdm(total=total_batches, desc="模型推理中", unit="batch") as pbar:
         for batch_inputs, batch_references in dataloader:
-            batch_outputs = generate_text(model, tokenizer, batch_inputs)
+            batch_outputs = generate_text(model, tokenizer, batch_inputs, max_new_tokens=512, temperature=temperature)
             predictions.extend(batch_outputs)
             references_list.extend(batch_references)
             pbar.update(1)  # 进度条更新
@@ -225,3 +227,32 @@ def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evalu
 
     save_results(output_dir, predictions, references_list, evaluation_results)
     logger.info(f"评估结果已保存至 {output_dir}")
+
+
+def main():
+    """主函数"""
+    parser = argparse.ArgumentParser(description="大模型评估管线")
+    parser.add_argument("--model_path", type=str, default="/mnt/sda/wyp/models/ds-qwen7b-sft", help="本地模型路径")
+    parser.add_argument("--input_file", type=str, default="/mnt/sda/wyp/forestllm-main/output/forest_val_v1.csv", help="输入数据文件")
+    parser.add_argument("--output_dir", type=str, default="outputs/eval_data/", help="评估结果存储目录")
+    parser.add_argument("--task_type", type=str, choices=["mcq", "qa"], default="mcq", help="任务类型")
+    parser.add_argument("--evaluation_method", type=str, choices=["metrics", "gpt4", "manual"], default="metrics", help="评估方式")
+    parser.add_argument("--batch_size", type=int, default=2, help="批量推理大小")
+    parser.add_argument("--max_new_tokens", type=int, default=2048, help="最大生成长度")
+    parser.add_argument("--temperature", type=float, default=0.3, help="生成温度")
+
+    args = parser.parse_args()
+
+    model, tokenizer = load_model(args.model_path, temperature=args.temperature)
+    output_dir = os.path.join(args.output_dir, args.model_path.split("/")[-1])
+    os.makedirs(output_dir, exist_ok=True)
+    print("评估结果将存储在：", output_dir)
+
+    dataloader, total_batches  = get_dataloader(args.input_file, batch_size=args.batch_size, task_type=args.task_type)
+    evaluate_model(
+        model, tokenizer, dataloader, total_batches, args.task_type, args.evaluation_method, output_dir, args.temperature
+    )
+
+
+if __name__ == "__main__":
+    main()

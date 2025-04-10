@@ -4,7 +4,7 @@ Question: '{question}'
 """
 
 SIMULATE_ANSWER_CN = """
-问题：'{question}'
-
-直接作答，无需输出其它内容例如分析过程推理步骤等。
+{question}
 """
+
+# 直接作答，无需输出其它内容(过程分析、推理步骤、答案解析等):
