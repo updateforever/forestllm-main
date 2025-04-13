@@ -43,8 +43,13 @@ class CustomDataset(Dataset):
                         if model_mode=='normal':
                             prompt = f"请阅读以下问题，并直接给出正确答案的选项。若需思考，请尽量进行短思考，并快速给出最终答案。\n\n问题：{question}\n{options}\n答案："
                         else:
-                            prompt = f"请解决以下问题。请将思考过程写在 <think> 和 </think> 标签中，并将最终答案写在 <answer> 和 </answer> 标签中。\n\n问题：{question}\n{options}\n答案："
-                        
+                            # prompt = f"A conversation between User and Assistant. The user asks a question, and the Assistant solves it. \
+                            #     The assistant first thinks about the reasoning process in the mind and then provides the user with the answer. \
+                            #         The reasoning process and answer are enclosed within <think> </think> and <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think><answer> answer here </answer>\
+                            #         请解决以下问题。请将思考过程写在 <think> 和 </think> 标签中，并将最终答案写在 <answer> 和 </answer> 标签中。\n\n问题：{question}\n{options}\n答案："
+                            
+                            prompt = f"""Please reason step by step, and put your final answer with \boxed{{}}.(Don't make your reasoning too long)\nUser: 请阅读以下问题，并直接给出正确答案的选项。若需思考，请尽量进行短思考，并快速给出最终答案。\n问题：{question}\n{options}\nAssistant: <think>\n"""
+                            
                         inputs.append(prompt)
                         references.append(answer)
                         input_lengths.append(len(prompt))
@@ -76,7 +81,7 @@ class CustomDataset(Dataset):
             list(zip(self.inputs[i:i + bucket_size], self.references[i:i + bucket_size]))
             for i in range(0, len(self.inputs), bucket_size)
         ]
-        np.random.shuffle(buckets)  # 只打乱 bucket 的顺序，不打乱 bucket 内部的长度排序
+        # np.random.shuffle(buckets)  # 只打乱 bucket 的顺序，不打乱 bucket 内部的长度排序
         return buckets
 
     def __len__(self):
@@ -93,7 +98,7 @@ class CustomDataset(Dataset):
                     batch_inputs, batch_references = zip(*batch)
                     batches.append((list(batch_inputs), list(batch_references)))
         
-        np.random.shuffle(batches)  # 再次打乱 batch 的顺序
+        # np.random.shuffle(batches)  # 再次打乱 batch 的顺序
         return batches
 
 class IterableDatasetWrapper(torch.utils.data.IterableDataset):
@@ -107,9 +112,9 @@ class IterableDatasetWrapper(torch.utils.data.IterableDataset):
         for batch in self.batches:
             yield batch  # batch 本身已经是一个列表，无需再拆
 
-def get_dataloader(file_path, batch_size=4, task_type="mcq"):
+def get_dataloader(file_path, batch_size=4, task_type="mcq", model_mode='normal'):
     """使用 `CustomDataset` 进行数据加载，确保 batch_size 统一"""
-    dataset = CustomDataset(file_path, task_type=task_type)
+    dataset = CustomDataset(file_path, task_type=task_type, model_mode=model_mode)
     batches = dataset.get_batches(batch_size)  # 这里 batch_size 已经生效
     total_batches = len(batches)  # ✅ 计算 batch 总数
 

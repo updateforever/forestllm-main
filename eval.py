@@ -68,6 +68,34 @@ def extract_first_option(text):
         return match.group(1)
     return None
 
+def extract_first_option(text):
+    """
+    从文本中提取第一个有效选项（A/B/C/D），按以下优先级：
+    1. 提取 \boxed{A} 形式中的内容；
+    2. 提取 <answer>A</answer> 形式中的内容；
+    3. 从文本开头前100字符中解析 A/B/C/D。
+    """
+    text_upper = text.strip().upper()
+
+    # 1️⃣ 尝试提取 \boxed{A}
+    boxed_match = re.search(r"\\boxed\{([ABCD])\}", text)
+    if boxed_match:
+        return boxed_match.group(1)
+
+    # 2️⃣ 尝试提取 <answer>A</answer>
+    tag_match = re.search(r"<answer>\s*([ABCD])\s*</answer>", text)
+    if tag_match:
+        return tag_match.group(1)
+
+    # 3️⃣ 回退到前100字符中搜索 A/B/C/D
+    short_text = text[:100]
+    fallback_match = re.search(r"\b([ABCD])[\s\).，、。]?", short_text)
+    if fallback_match:
+        return fallback_match.group(1)
+
+    # 都失败返回 None
+    return None
+
 def is_valid_option(answer):
     """
     判断是否为有效的选项 A/B/C/D。
@@ -149,70 +177,83 @@ def call_gpt4_eval(predictions, references, task_type):
     logger.info(f"GPT-4 评分结果: {responses}")
     return responses
 
-def save_results(output_dir, predictions, references, evaluation_results):
-    """保存推理结果和评估指标"""
+def save_results(output_dir, predictions, references, evaluation_results, raw_outputs, original_inputs=None):
+    """保存 JSON 和 CSV 评估结果"""
+    # ==== 1️⃣ JSON 保存 ====
     predictions_file = os.path.join(output_dir, "predictions.json")
     metrics_file = os.path.join(output_dir, "metrics.json")
 
     with open(predictions_file, "w", encoding="utf-8") as f:
-        json.dump({"predictions": predictions, "references": references}, f, ensure_ascii=False, indent=4)
-    logger.info(f"🔹 推理结果已保存至 {predictions_file}")
+        json.dump({
+            "inputs": original_inputs,
+            "predictions": predictions,
+            "references": references,
+            "raw_outputs": raw_outputs
+        }, f, ensure_ascii=False, indent=4)
+    logger.info(f"🔹 JSON 推理结果已保存至 {predictions_file}")
 
     with open(metrics_file, "w", encoding="utf-8") as f:
         json.dump(evaluation_results, f, ensure_ascii=False, indent=4)
     logger.info(f"🔹 评估指标已保存至 {metrics_file}")
 
-def generate_text(model, tokenizer, input_texts, max_new_tokens=256, temperature=0.7):
-    """使用 Hugging Face 进行文本生成（支持批量推理）"""
-    # if 'mini' in model.model_dir or 'llama' in model.model_dir or 'Mini' in model.model_dir:
-    #     tokenizer.pad_token = tokenizer.eos_token
-    inputs = tokenizer(input_texts, padding=True, truncation=True, max_length=1024, padding_side='left', return_tensors="pt").to(model.device)
-    input_length = inputs["input_ids"].shape[1]  # 获取输入 token 的长度
+    # ==== 2️⃣ CSV 保存 ====
+    csv_file = os.path.join(output_dir, "predictions.csv")
+    with open(csv_file, "w", newline="", encoding="utf-8") as csvfile:
+        writer = csv.writer(csvfile)
+        writer.writerow(["id", "input", "raw_output", "predicted", "reference", "correct"])
+        for idx, (inp, raw, pred, ref) in enumerate(zip(original_inputs, raw_outputs, predictions, references)):
+            correct = "✓" if pred == ref else "✗"
+            writer.writerow([idx + 1, inp, raw, pred, ref, correct])
+    logger.info(f"📄 CSV 推理结果已保存至 {csv_file}")
+
+
+def generate_text(model, tokenizer, input_texts, max_new_tokens=4096, temperature=0.7):
+    """使用 Hugging Face 进行文本生成（支持批量推理，返回原始输出）"""
+    inputs = tokenizer(
+        input_texts, padding=True, truncation=True, max_length=1024,
+        padding_side='left', return_tensors="pt"
+    ).to(model.device)
+    input_length = inputs["input_ids"].shape[1]
 
     with torch.no_grad():
         output_sequences = model.generate(
             **inputs,
-            max_new_tokens=max_new_tokens,  # 只限制生成部分的长度
+            max_new_tokens=max_new_tokens,
             temperature=temperature,
-            do_sample=True  # 允许一定的随机性
+            do_sample=True
         )
 
-    # 去掉输入部分，仅保留模型生成的内容
-    new_tokens = output_sequences[:, input_length:]  # 只保留生成部分
+    new_tokens = output_sequences[:, input_length-2:]
     output_texts = tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
-    output_texts = [text.strip() for text in output_texts]  # 进一步清理
+    output_texts = [text.strip() for text in output_texts]
 
     final_answers = []
     for output in output_texts:
         thought_process, answer_candidate = extract_answer_from_think(output)
-
-        # if is_valid_option(answer_candidate):
-        #     final_answers.append(answer_candidate)  # 直接返回 A/B/C/D
-        # else:
-        #     gpt4_answer = infer_answer_with_gpt4(thought_process, answer_candidate)
-        #     final_answers.append(gpt4_answer)
         option = extract_first_option(answer_candidate) if not answer_candidate.strip() in ["A", "B", "C", "D"] else answer_candidate.strip()
-
         if option:
             final_answers.append(option)
         else:
             gpt4_answer = infer_answer_with_gpt4(thought_process, answer_candidate)
             final_answers.append(gpt4_answer)
-    return final_answers
+
+    return final_answers, output_texts
 
 def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evaluation_method, output_dir, temperature):
     """使用 Hugging Face 进行评估（支持 PyTorch DataLoader）"""
     logger.info(f"开始评估模型: {task_type}")
 
     os.makedirs(output_dir, exist_ok=True)
-    predictions, references_list = [], []
+    predictions, references_list, raw_outputs, input_texts = [], [], [], []
 
     with tqdm(total=total_batches, desc="模型推理中", unit="batch") as pbar:
         for batch_inputs, batch_references in dataloader:
-            batch_outputs = generate_text(model, tokenizer, batch_inputs, max_new_tokens=512, temperature=temperature)
-            predictions.extend(batch_outputs)
+            batch_preds, batch_raw = generate_text(model, tokenizer, batch_inputs, temperature=temperature)
+            predictions.extend(batch_preds)
+            raw_outputs.extend(batch_raw)
             references_list.extend(batch_references)
-            pbar.update(1)  # 进度条更新
+            input_texts.extend(batch_inputs)  
+            pbar.update(1)
 
     evaluation_results = {}
     if task_type == "mcq":
@@ -225,7 +266,7 @@ def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evalu
             else {"predictions": predictions, "references": references_list}
         )
 
-    save_results(output_dir, predictions, references_list, evaluation_results)
+    save_results(output_dir, predictions, references_list, evaluation_results, raw_outputs)
     logger.info(f"评估结果已保存至 {output_dir}")
 
 
@@ -233,13 +274,15 @@ def main():
     """主函数"""
     parser = argparse.ArgumentParser(description="大模型评估管线")
     parser.add_argument("--model_path", type=str, default="/mnt/sda/wyp/models/ds-qwen7b-sft", help="本地模型路径")
-    parser.add_argument("--input_file", type=str, default="/mnt/sda/wyp/forestllm-main/output/forest_val_v1.csv", help="输入数据文件")
+    parser.add_argument("--input_file", type=str, default="/mnt/sda/wyp/forestllm-main/forest_eval/forest_val_v1.csv", help="输入数据文件")
     parser.add_argument("--output_dir", type=str, default="outputs/eval_data/", help="评估结果存储目录")
     parser.add_argument("--task_type", type=str, choices=["mcq", "qa"], default="mcq", help="任务类型")
     parser.add_argument("--evaluation_method", type=str, choices=["metrics", "gpt4", "manual"], default="metrics", help="评估方式")
     parser.add_argument("--batch_size", type=int, default=2, help="批量推理大小")
     parser.add_argument("--max_new_tokens", type=int, default=2048, help="最大生成长度")
     parser.add_argument("--temperature", type=float, default=0.3, help="生成温度")
+    parser.add_argument("--model_mode", type=str, default='cot', help="模板选择")
+    
 
     args = parser.parse_args()
 
@@ -248,7 +291,7 @@ def main():
     os.makedirs(output_dir, exist_ok=True)
     print("评估结果将存储在：", output_dir)
 
-    dataloader, total_batches  = get_dataloader(args.input_file, batch_size=args.batch_size, task_type=args.task_type)
+    dataloader, total_batches  = get_dataloader(args.input_file, batch_size=args.batch_size, task_type=args.task_type, model_mode=args.model_mode)
     evaluate_model(
         model, tokenizer, dataloader, total_batches, args.task_type, args.evaluation_method, output_dir, args.temperature
     )

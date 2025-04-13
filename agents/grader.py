@@ -28,10 +28,10 @@ class GradingTeacher(BaseAgent):
 
     def __init__(self, model="qwen"):
         super().__init__(name="GradingTeacher", model=model)
-        from prompts.finl_eval_prompts import GRADE_PROMPT_CN, GRADE_PROMPT_CN2
+        from prompts.finl_eval_prompts import GRADE_PROMPT_CN, GRADE_PROMPT_CN2, GRADE_PROMPT_CN_FINAL
 
-        # self.prompt = GRADE_PROMPT_CN
-        self.prompt = GRADE_PROMPT_CN2
+        # self.prompt = GRADE_PROMPT_CN  GRADE_PROMPT_CN2
+        self.prompt = GRADE_PROMPT_CN_FINAL  
 
     def evaluate_answer(self, text, response, student_answer, data_class=None):
         """
@@ -50,7 +50,7 @@ class GradingTeacher(BaseAgent):
         )
 
         # 调用大模型进行评估
-        grading_response = run_agent(prompt, model=self.model, num_gen=1, temperature=1)
+        grading_response = run_agent(prompt, model=self.model, num_gen=1, temperature=0.5)
 
         # 使用正则提取评分和反馈
         try:
