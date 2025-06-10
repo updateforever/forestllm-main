@@ -48,14 +48,37 @@ def load_model(model_path, temperature=1.0):
     return model, tokenizer
 
 
-def extract_answer_from_think(output_text):
-    """提取 `<think>...</think>` 之后的答案"""
-    match = re.search(r"<think>(.*?)</think>(.*)", output_text, re.DOTALL)
-    if match:
-        thought_process = match.group(1).strip()  # `<think>` 内的内容
-        answer_candidate = match.group(2).strip()  # `<think>` 之后的内容
-        return thought_process, answer_candidate
-    return None, output_text.strip()  # 没有 `<think>`，直接返回整个输出
+def extract_answer_from_tags(output_text):
+    """
+    从生成结果中提取 `<think>` 和 `<answer>` 内容。
+    支持部分缺失情况：
+    - 有完整的 <think>...</think> 和 <answer>...</answer>：正常解析
+    - 缺失 <answer>：回退到 think 后的文本尝试提取
+    - 缺失 <think>：仅提取 answer 标签
+    - 全部缺失：原样返回
+    """
+    output_text = output_text.strip()
+    think_match = re.search(r"<think>(.*?)</think>", output_text, re.DOTALL)
+    answer_match = re.search(r"<answer>(.*?)</answer>", output_text, re.DOTALL)
+
+    thought_process = None
+    answer_candidate = None
+
+    if think_match:
+        thought_process = think_match.group(1).strip()
+    if answer_match:
+        answer_candidate = answer_match.group(1).strip()
+
+    # 如果只有 <think>，则尝试获取它后面的内容作为 answer_candidate
+    if think_match and not answer_match:
+        after_think = output_text[think_match.end():].strip()
+        answer_candidate = after_think
+
+    # 如果两个都没有，就返回原始内容
+    if not thought_process and not answer_candidate:
+        return None, output_text
+
+    return thought_process, answer_candidate or ""
 
 def extract_first_option(text):
     """
@@ -107,15 +130,14 @@ def is_valid_option(answer):
         return True
     return extract_first_option(cleaned) is not None
 
-def infer_answer_with_gpt4(thought_process, answer_candidate):
+def infer_answer_with_gpt4(model_output):
     """如果答案不是有效选项，调用 GPT-4 进行推理"""
-    logger.info(f"调用 GPT-4 进行答案修正: {answer_candidate}")
+    logger.info(f"调用 GPT-4 进行答案修正: {model_output}")
     prompt = f"""
-    你是一个严格的评分员，请根据以下推理过程，判断模型最有可能选择的选项（A/B/C/D）。
-    - **推理过程**: {thought_process}
-    - **模型原始答案**: {answer_candidate}
-
-    请直接输出最可能的选项（A/B/C/D），不需要解释。
+    你是一个严格的评分员，请根据以下模型输出，判断模型最有可能选择的选项（A/B/C/D）。
+    - **模型原始输出**: {model_output}
+    
+    题目为单选题，请直接输出最可能的选项（A/B/C/D），不需要解释。
     """
     try:
         gpt4_answer = run_agent(prompt, model="qwen")
@@ -223,13 +245,13 @@ def generate_text(model, tokenizer, input_texts, max_new_tokens=4096, temperatur
             do_sample=True
         )
 
-    new_tokens = output_sequences[:, input_length-2:]
+    new_tokens = output_sequences[:, input_length:]
     output_texts = tokenizer.batch_decode(new_tokens, skip_special_tokens=True)
     output_texts = [text.strip() for text in output_texts]
 
     final_answers = []
     for output in output_texts:
-        thought_process, answer_candidate = extract_answer_from_think(output)
+        thought_process, answer_candidate = extract_answer_from_tags(output)
         option = extract_first_option(answer_candidate) if not answer_candidate.strip() in ["A", "B", "C", "D"] else answer_candidate.strip()
         if option:
             final_answers.append(option)
@@ -247,12 +269,18 @@ def evaluate_model(model, tokenizer, dataloader, total_batches, task_type, evalu
     predictions, references_list, raw_outputs, input_texts = [], [], [], []
 
     with tqdm(total=total_batches, desc="模型推理中", unit="batch") as pbar:
-        for batch_inputs, batch_references in dataloader:
-            batch_preds, batch_raw = generate_text(model, tokenizer, batch_inputs, temperature=temperature)
+        # for batch_inputs, batch_references in dataloader:
+        #     batch_preds, batch_raw = generate_text(model, tokenizer, batch_inputs, temperature=temperature)
+        for batch_items in dataloader:
+            prompts = [item["prompt"] for item in batch_items]
+            batch_references = [item["answer"] for item in batch_items]
+
+            batch_preds, batch_raw = generate_text(model, tokenizer, prompts, temperature=temperature)
+
             predictions.extend(batch_preds)
             raw_outputs.extend(batch_raw)
             references_list.extend(batch_references)
-            input_texts.extend(batch_inputs)  
+            input_texts.extend(prompts)  
             pbar.update(1)
 
     evaluation_results = {}
