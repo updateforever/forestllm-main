@@ -41,12 +41,20 @@ def extract_answer_from_tags(output_text):
 def extract_first_option(text):
     """优先提取 \boxed{}、<answer>、"answer": "X"、再 fallback 纯字母"""
     text_upper = text.strip()
+<<<<<<< HEAD
     for pattern in [ 
         r"\\boxed\{([ABCD])\}",                # 匹配 \boxed{A}
         r"<answer>\s*([ABCD])\s*</answer>",    # 匹配 <answer>A</answer>
         r'"answer"\s*:\s*"([ABCD])"',          # 匹配 "answer": "A"
         r'"答案"\s*:\s*"([ABCD])"',            # ✅ 新增，匹配 "答案": "A" 这种中文的
         r"\b([ABCD])[\s\).，、。]?"             # fallback，直接找单字母
+=======
+    for pattern in [
+        r"\\boxed\{([ABCD])\}",           # 匹配 \boxed{A}
+        r"<answer>\s*([ABCD])\s*</answer>", # 匹配 <answer>A</answer>
+        r'"answer"\s*:\s*"([ABCD])"',       # 匹配 "answer": "A"
+        r"\b([ABCD])[\s\).，、。]?"          # fallback，直接找单字母
+>>>>>>> 9ce0f14f46524713196e7f72c74d8dd781d1007f
     ]:
         match = re.search(pattern, text_upper)
         if match:
@@ -171,15 +179,26 @@ def evaluate_and_save(model, tokenizer, dataloader, total_batches, output_path, 
 
 def main():
     parser = argparse.ArgumentParser()
+<<<<<<< HEAD
     parser.add_argument("--model_path", type=str, default="/mnt/sda/wyp/models/Qwen3-8B", help="本地模型路径")
     parser.add_argument("--input_file", type=str, default="/mnt/sda/wyp/forestllm-main/forest_eval/forest_book_mcq_1k3.csv", help="输入数据文件")
+=======
+    parser.add_argument("--model_path", type=str, default="/mnt/sda/wyp/models/DeepSeek-R1-Distill-Qwen-7B", help="本地模型路径")
+    parser.add_argument("--input_file", type=str, default="/mnt/sda/wyp/forestllm-main/outputs/compare_subsets/books_mcq_1k5_v1.csv", help="输入数据文件")
+>>>>>>> 9ce0f14f46524713196e7f72c74d8dd781d1007f
     parser.add_argument("--output_dir", type=str, default="/mnt/sda/wyp/forestllm-main/outputs/eval/", help="评估结果存储目录")
     parser.add_argument("--task_type", type=str, choices=["mcq", "qa"], default="mcq", help="任务类型")
     parser.add_argument("--evaluation_method", type=str, choices=["metrics", "gpt4", "manual"], default="metrics", help="评估方式")
     parser.add_argument("--batch_size", type=int, default=4, help="批量推理大小")
+<<<<<<< HEAD
     parser.add_argument("--max_new_tokens", type=int, default=8192, help="最大生成长度")
     parser.add_argument("--temperature", type=float, default=0.6, help="生成温度")
     parser.add_argument("--model_mode", type=str, default='normal', help="模板选择")
+=======
+    parser.add_argument("--max_new_tokens", type=int, default=4096, help="最大生成长度")
+    parser.add_argument("--temperature", type=float, default=0.6, help="生成温度")
+    parser.add_argument("--model_mode", type=str, default='cot', help="模板选择")
+>>>>>>> 9ce0f14f46524713196e7f72c74d8dd781d1007f
 
     args = parser.parse_args()
     # /mnt/sda/wyp/forestllm-main/forest_eval/forest_zero_shot.csv
@@ -188,7 +207,10 @@ def main():
     # /mnt/sda/wyp/models/qwen25
     # /mnt/sda/wyp/models/llama
     # /mnt/sda/wyp/models/Qwen3-8B-Base
+<<<<<<< HEAD
     # /mnt/sda/wyp/models/DeepSeek-R1-Distill-Qwen-7B
+=======
+>>>>>>> 9ce0f14f46524713196e7f72c74d8dd781d1007f
     model, tokenizer = load_model(args.model_path)
     tag = os.path.basename(args.model_path).split("/")[-1]
     eval_split = os.path.splitext(os.path.basename(args.input_file))[0]
@@ -205,7 +227,10 @@ def main():
 
 if __name__ == "__main__":
     main()
+<<<<<<< HEAD
 
 
 # CUDA_VISIBLE_DEVICES=3 python eval_new.py --model_path /mnt/sda/wyp/models/qwen3_8b_sft_ep3 --input_file /mnt/sda/wyp/forestllm-main/forest_eval/compare_subsets/forest_zero_shot_v1.csv --temperature 0.6
 # CUDA_VISIBLE_DEVICES=2 python eval_new.py --model_path /mnt/sda/wyp/models/Qwen3-8B --input_file /mnt/sda/wyp/forestllm-main/forest_eval/compare_subsets/forest_zero_shot_v1.csv --temperature 0.6
+=======
+>>>>>>> 9ce0f14f46524713196e7f72c74d8dd781d1007f

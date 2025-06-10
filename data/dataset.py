@@ -47,8 +47,13 @@ class CustomDataset(Dataset):
                         answer = row["answer"].strip().upper()
                         id_ = int(row["id"]) if "id" in row else None  # 读取 id 字段
                         
+<<<<<<< HEAD
                         system_prompt = "你是一个专业的林业智能问答助手" if model_mode == 'normal' else PROMPT_COT
                         user_prompt = f"请阅读下列单选题，并在答案栏中只填写选择的字母，例如：\"答案\": \"C\"。\n 单选题：{question}\n{options}\n"
+=======
+                        system_prompt = "你是一个专业的林业智能问答助手。" if model_mode == 'normal' else PROMPT_COT
+                        user_prompt = f"请阅读下列单选题，并在答案栏中只填写选择的字母，例如：\"answer\": \"C\"。\n 单选题：{question}\n{options}\n"
+>>>>>>> 9ce0f14f46524713196e7f72c74d8dd781d1007f
                         messages = [
                             {"role": "system", "content": system_prompt},
                             {"role": "user", "content": user_prompt}
@@ -68,7 +73,11 @@ class CustomDataset(Dataset):
                             input_text = row["input"]
                             answer = row["reference"]
                             messages = [
+<<<<<<< HEAD
                                 {"role": "system", "content": "你是一个专业的林业智能问答助手"},
+=======
+                                {"role": "system", "content": "你是一个专业的问答助手"},
+>>>>>>> 9ce0f14f46524713196e7f72c74d8dd781d1007f
                                 {"role": "user", "content": input_text}
                             ]
                             prompt = messages_to_prompt(messages)

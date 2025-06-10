@@ -154,9 +154,17 @@ if __name__ == "__main__":
 
 """
 python extract_sub_data.py \
+<<<<<<< HEAD
   --model2_result /mnt/sda/wyp/forestllm-main/outputs/eval/Qwen3-8B/forest_zero_shot/nothink_results.jsonl \
   --model1_result /mnt/sda/wyp/forestllm-main/outputs/eval/qwen3_8b_sft_ep3/forest_zero_shot/results.jsonl \
   --model3_result /mnt/sda/wyp/forestllm-main/outputs/eval_api/gpt4/forest_zero_shot/results.jsonl \
   --original_csv /mnt/sda/wyp/forestllm-main/forest_eval/forest_zero_shot.csv \
   --output_dir /mnt/sda/wyp/forestllm-main/forest_eval/compare_subsets1
+=======
+  --model2_result /mnt/sda/wyp/forestllm-main/outputs/eval/DeepSeek-R1-Distill-Qwen-7B/eval_multiple_choice_filtered/results.jsonl\
+  --model1_result /mnt/sda/wyp/forestllm-main/outputs/eval/checkpoint-12277/eval_multiple_choice_filtered/results.jsonl \
+  --model3_result /mnt/sda/wyp/forestllm-main/outputs/eval_api/gpt4/eval_multiple_choice_filtered/results.jsonl \
+  --original_csv /mnt/sda/wyp/forestllm-main/forest_eval/book/eval_multiple_choice_filtered.csv \
+  --output_dir /mnt/sda/wyp/forestllm-main/outputs/compare_subsets
+>>>>>>> 9ce0f14f46524713196e7f72c74d8dd781d1007f
 """
